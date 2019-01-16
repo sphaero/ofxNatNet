@@ -1,6 +1,11 @@
 #pragma once
 
 #include "ofMain.h"
+#include <Poco/Net/SocketAddress.h>
+#include <Poco/Net/DatagramSocket.h>
+#include <Poco/Net/MulticastSocket.h>
+#include <Poco/Net/NetworkInterface.h>
+#include <Poco/Net/NetException.h>
 
 class ofxNatNet
 {
@@ -142,10 +147,10 @@ public:
 		return true;
 	}
 	
-	inline const size_t getNumSkeleton() { return skeletons.size(); }
+	inline const size_t getNumSkeleton() { return skeletons_arr.size(); }
 	inline const Skeleton& getSkeletonAt(int index)
 	{
-		return *skeletons_arr[index];
+		return skeletons_arr[index];
 	}
 	
 	inline const bool hasSkeleton(int id)
@@ -174,6 +179,7 @@ public:
 	inline const vector<RigidBodyDescription> getRigidBodyDescriptions() { return rigidbody_descs; }
 	inline const vector<SkeletonDescription> getSkeletonDescriptions() { return skeleton_descs; }
     
+    static map<string, Poco::Net::IPAddress> getNetworkInterfaces();
 protected:
 	InternalThread* thread;
 
@@ -189,7 +195,7 @@ protected:
     vector<RigidBody> rigidbodies_arr;
 	
 	map<int, Skeleton> skeletons;
-	vector<Skeleton*> skeletons_arr;
+	vector<Skeleton> skeletons_arr;
 
 	vector<RigidBodyDescription> rigidbody_descs;
 	vector<SkeletonDescription> skeleton_descs;

@@ -1,11 +1,5 @@
 #include "ofxNatNet.h"
 
-#include <Poco/Net/SocketAddress.h>
-#include <Poco/Net/DatagramSocket.h>
-#include <Poco/Net/MulticastSocket.h>
-#include <Poco/Net/NetworkInterface.h>
-#include <Poco/Net/NetException.h>
-
 const int impl_major = 2;
 const int impl_minor = 9;
 
@@ -88,6 +82,7 @@ struct ofxNatNet::InternalThread : public ofThread
     map<int, ofxNatNet::RigidBody> _rigidbodies;
 	
     vector<vector<ofxNatNet::Marker> > _markers_set;
+    vector<ofxNatNet::Skeleton> _skeletons_arr;
     map<int, ofxNatNet::Skeleton> _skeletons;
 
     vector<RigidBodyDescription> _rigidbody_descs;
@@ -122,8 +117,7 @@ struct ofxNatNet::InternalThread : public ofThread
 			{
 				Poco::Net::SocketAddress addr(Poco::Net::IPAddress::wildcard(),
 											  data_port);
-				
-				try
+				                try
 				{
 					interface = Poco::Net::NetworkInterface::forAddress(Poco::Net::IPAddress(interface_name));
 				}
@@ -132,6 +126,7 @@ struct ofxNatNet::InternalThread : public ofThread
 					interface = Poco::Net::NetworkInterface::forName(
 						interface_name, Poco::Net::NetworkInterface::IPv4_ONLY);
 				}
+                
 
 				data_socket.bind(addr, true);
 				data_socket.joinGroup(Poco::Net::IPAddress(multicast_group),
@@ -152,7 +147,14 @@ struct ofxNatNet::InternalThread : public ofThread
 			}
 
 			{
-				Poco::Net::SocketAddress my_addr(interface.address(), 0);
+
+                
+                
+#ifndef TARGET_OS_X      //on OSX interface.address() returns an ipv6 address 
+                Poco::Net::SocketAddress my_addr("0.0.0.0", 0);
+#else
+                Poco::Net::SocketAddress my_addr(interface.address(), 0);
+#endif
 				command_socket.bind(my_addr, true);
 				command_socket.setReceiveBufferSize(0x100000);
 				command_socket.setBroadcast(true);
@@ -704,6 +706,7 @@ struct ofxNatNet::InternalThread : public ofThread
                 this->_markers = tmp_markers;
                 this->_filterd_markers = tmp_filterd_markers;
                 this->_rigidbodies_arr = tmp_rigidbodies;
+                this->_skeletons_arr = tmp_skeletons;
                 // fill the rigidbodies map
                 {
                     for (int i = 0; i < tmp_rigidbodies.size(); i++) {
@@ -928,13 +931,8 @@ void ofxNatNet::update()
 			{
                 skeletons = thread->_skeletons;
 				skeletons_arr.clear();
-				
-                map<int, Skeleton>::iterator it = thread->_skeletons.begin();
-                while (it != thread->_skeletons.end())
-				{
-					skeletons_arr.push_back(&it->second);
-					it++;
-				}
+                skeletons_arr = thread->_skeletons_arr;
+                
 			}
             
             markerset_descs = thread->_markerset_descs;
@@ -1134,3 +1132,48 @@ void ofxNatNet::debugDraw()
 	debugDrawInformation();
 }
 
+map<string, Poco::Net::IPAddress> ofxNatNet::getNetworkInterfaces()
+{
+    map<string, Poco::Net::IPAddress> ret;
+
+    Poco::Net::NetworkInterface::Map m = Poco::Net::NetworkInterface::map(true, true);
+    assert (!m.empty());
+    for (Poco::Net::NetworkInterface::Map::const_iterator it = m.begin(); it != m.end(); ++it)
+    {
+        std::cout << std::endl << "=============" << std::endl;
+
+        std::cout << "Index:       " << it->second.index() << std::endl;
+        std::cout << "Name:        " << it->second.name() << std::endl;
+        std::cout << "DisplayName: " << it->second.displayName() << std::endl;
+        std::cout << "Status:      " << (it->second.isUp() ? "Up" : "Down") << std::endl;
+
+        Poco::Net::NetworkInterface::MACAddress mac(it->second.macAddress());
+        if (!mac.empty() && (it->second.type() != Poco::Net::NetworkInterface::NI_TYPE_SOFTWARE_LOOPBACK))
+                std::cout << "MAC Address: (" << it->second.type() << ") " << mac << std::endl;
+
+        typedef Poco::Net::NetworkInterface::AddressList List;
+
+        const List& ipList = it->second.addressList();
+        List::const_iterator ipIt = ipList.begin();
+        List::const_iterator ipEnd = ipList.end();
+        for (int counter = 0; ipIt != ipEnd; ++ipIt, ++counter)
+        {
+            int fam = ipIt->get<Poco::Net::NetworkInterface::IP_ADDRESS>().family();
+
+            std::cout << std::endl << "----------" << std::endl;
+            std::cout << "Address " << counter << std::endl;
+            std::cout << "----------" << std::endl;
+            std::cout << "Family:     " << fam << std::endl;
+            std::cout << "Address:     " << ipIt->get<Poco::Net::NetworkInterface::IP_ADDRESS>() << std::endl;
+            Poco::Net::IPAddress addr = ipIt->get<Poco::Net::NetworkInterface::SUBNET_MASK>();
+            if (!addr.isWildcard()) std::cout << "Subnet:      " << addr << " (/" << addr.prefixLength() << ")" << ")" << std::endl;
+                    addr = ipIt->get<Poco::Net::NetworkInterface::BROADCAST_ADDRESS>();
+            if (!addr.isWildcard()) std::cout << "Broadcast:   " << addr << std::endl;
+            if (fam == Poco::Net::AddressFamily::IPv4)
+            {
+                ret[it->second.name()] = ipIt->get<Poco::Net::NetworkInterface::IP_ADDRESS>();
+            }
+        }
+    }
+    return ret;
+}
